@@ -1,0 +1,177 @@
+#!/usr/bin/php
+<?php
+namespace nuffy\aoc\rudolf;
+require_once __DIR__.'/vendor/autoload.php';
+
+$conf = (object)parse_ini_file(__DIR__.'/.config');
+
+$getopt = new \GetOpt\GetOpt();
+
+$getopt->addOption(\GetOpt\Option::create('?', 'help', \GetOpt\GetOpt::NO_ARGUMENT));
+
+$getopt->addCommand(\GetOpt\Command::create('setup', 'Setup'));
+
+$getopt->addCommand(\GetOpt\Command::create('dawn', 'Day::create', [
+    \GetOpt\Option::create('d', 'day', \GetOpt\GetOpt::REQUIRED_ARGUMENT)
+        ->setDescription("Day you want to create, between 1 and 25.")
+        ->setValidation(function($value){
+            return is_numeric($value) && $value >= 1 && $value <= 25;
+        }, 'Day has to be a number between 1 and 25.')
+])->setDescription("Creates a new day."));
+
+$getopt->addCommand(\GetOpt\Command::create('submit', 'Day::submit', [
+    \GetOpt\Option::create('d', 'day', \GetOpt\GetOpt::REQUIRED_ARGUMENT)
+        ->setDescription("Day you want to submit, between 1 and 25.")
+        ->setValidation(function($value){
+            return is_numeric($value) && $value >= 1 && $value <= 25;
+        }, 'Day has to be a number between 1 and 25.'),
+    \GetOpt\Option::create('p', 'part', \GetOpt\GetOpt::REQUIRED_ARGUMENT)
+        ->setDescription("Part you want to submit, 1 or 2.")
+        ->setValidation(function($value){
+            return is_numeric($value) && $value >= 1 && $value <= 2;
+        }, 'Part has to be a number between 1 and 2.')
+])->setDescription("Submits a solution to a part."));
+
+$getopt->addCommand(\GetOpt\Command::create('score', 'Scoreboard::get')->setDescription("Shows current scoreboard."));
+
+try {
+    try {
+        $getopt->process();
+    } catch (\GetOpt\ArgumentException\Missing $exception) {
+        // catch missing exceptions if help is requested
+        if (!$getopt->getOption('help')) {
+            throw $exception;
+        }
+    }
+} catch (\GetOpt\ArgumentException $exception) {
+    file_put_contents('php://stderr', $exception->getMessage() . PHP_EOL);
+    echo PHP_EOL . $getopt->getHelpText();
+    exit;
+}
+
+$command = $getopt->getCommand();
+if (!$command || $getopt->getOption('help')) {
+    echo $getopt->getHelpText();
+    exit;
+}
+$handler = $command->getHandler();
+if($handler == "Day::create"){
+    $day = $getopt->getOption('day');
+    $folder_name = "d". str_pad($day, 2, 0, STR_PAD_LEFT);
+    $target_dir = __DIR__.DIRECTORY_SEPARATOR.$folder_name;
+    
+    if(file_exists(__DIR__."/$folder_name")){
+        die("Directory \"$target_dir".DIRECTORY_SEPARATOR."\" already exists!");
+    }
+    
+    mkdir($target_dir);
+    
+    file_put_contents($target_dir."/solve.php", getSolveFileContent($day));
+    file_put_contents($target_dir."/input.txt", getCurlResponse("https://adventofcode.com/{$conf->YEAR}/day/$day/input"));
+    
+    echo "Day $day generated. Good luck!\nTo see day $day's task, go to https://adventofcode.com/{$conf->YEAR}/day/$day";
+}elseif($handler == "Scoreboard::get"){
+    echo getLeaderboard();
+    exit;
+}elseif($handler == "Setup"){
+    $year = readline('What year is this? ');
+    $sess_id = readline('What is your session id with AOC? ');
+    $leaderboard_id = readline('Private leaderboard id? (leave empty if none) ');
+    $namespace = readline('Namespace (ie. "nuffy\aoc21")? ');
+    file_put_contents(__DIR__.'/.config', "
+        NAMESPACE=$namespace\n
+        YEAR=$year\n
+        LEADERBOARD_ID=$leaderboard_id\n
+        SESSION_ID=$sess_id"
+    );
+    echo "Thank you, should now be set up!";
+    exit;
+}elseif($handler == "Day::submit"){
+    global $conf;
+    require_once __DIR__.'/d'.str_pad($getopt->getOption('day'), 2, 0, STR_PAD_LEFT).'/solve.php';
+    $solver_namespace = $conf->NAMESPACE.'\d'.str_pad($getopt->getOption('day'), 2, 0, STR_PAD_LEFT);
+    $solver_func = 'solve'.$getopt->getOption('part');
+    $input = file_get_contents(__DIR__.'/d'.str_pad($getopt->getOption('day'), 2, 0, STR_PAD_LEFT).'/input.txt');
+    $answer = call_user_func($solver_namespace.'\\'.$solver_func, str_getcsv($input, "\n"));
+    $response = submitAnswer($getopt->getOption('day'), $getopt->getOption('part'), $answer);
+    $message_pattern = '/<article>(.*?)<\/article>/s';
+    preg_match($message_pattern, $response, $message);
+    if(isset($message[1])) echo "Message from AOC: ".$message[1];
+    exit;
+}
+exit;
+
+
+if(!(isset($argv[1]) && is_numeric($argv[1]) && $argv[1] > 0 && $argv[1] < 26)){
+    die('Please define a day between 1 and 25');
+}
+
+
+function getSolveFileContent($day){
+    global $conf;
+    return '<?php
+/* https://adventofcode.com/'.$conf->YEAR.'/day/'.$day.' */
+namespace '.$conf->NAMESPACE.'\d'.str_pad($day, 2, 0, STR_PAD_LEFT).';
+
+function solve1($input) : int
+{
+    return 0;
+}
+
+function solve2($input) : int
+{
+    return 0;
+}
+
+$input = str_getcsv(file_get_contents(__DIR__.\'/input.txt\'), "\n");
+echo "#1: ".solve1($input).PHP_EOL;
+echo "#2: ".solve2($input).PHP_EOL;';
+}
+
+function getCurlResponse($url)
+{
+    $conf = parse_ini_file(__DIR__.'/.config');
+    $curl = curl_init($url);
+    curl_setopt($curl, CURLOPT_COOKIE, "session=".$conf['SESSION_ID']);
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+    return curl_exec($curl);
+}
+
+function getLeaderboard() : string
+{
+    $conf = parse_ini_file(__DIR__.'/.config');
+    $res = getCurlResponse("https://adventofcode.com/2021/leaderboard/private/view/".$conf['LEADERBOARD_ID'].".json");
+    try{
+        $data = json_decode($res);
+        $members = (array)$data->members;
+    }catch(\Exception $e){
+        throw new \Exception ("Response from AOC was not json.", 0, $e);
+    }
+    usort($members, function($a, $b){
+        if($b->stars == $a->stars){
+            return $b->local_score <=> $a->local_score;
+        }
+        return $b->stars <=> $a->stars;
+    });
+    $leaderboard = '';
+    foreach($members as $member){
+        $leaderboard .= "{$member->name} - {$member->stars} stars - {$member->local_score} points\n";
+    }
+    return $leaderboard;
+}
+
+function submitAnswer($day, $part, $answer)
+{
+    $conf = parse_ini_file(__DIR__.'/.config');
+    $client = new \GuzzleHttp\Client();
+    $url = "https://adventofcode.com/{$conf['YEAR']}/day/$day/answer";
+    $data = [
+        'level' => $part,
+        'answer' => $answer
+    ];
+    $res = $client->request('POST', $url, [
+        'cookies' => \GuzzleHttp\Cookie\CookieJar::fromArray(['session' => $conf['SESSION_ID']], 'adventofcode.com'),
+        'form_params' => $data
+    ]);
+    return $res->getBody();
+}

@@ -1,0 +1,5 @@
+.vscode
+d**/input_test.txt
+d**/input.txt
+.config
+/vendor/

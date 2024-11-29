@@ -1,0 +1,16 @@
+{
+    "name": "nuffy/aoc21",
+    "description": "Advent of Code 2021",
+    "type": "playground",
+    "authors": [
+        {
+            "name": "Esben",
+            "email": "esben@inkpro.dk"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "ulrichsg/getopt-php": "^4.0",
+        "guzzlehttp/guzzle": "^7.9"
+    }
+}
